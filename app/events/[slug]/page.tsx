@@ -2,6 +2,7 @@ import Bookevent from "@/components/Bookevents";
 import EventCard from "@/components/EventCard";
 import { IEvent } from "@/database";
 import { getSimilarEventsBySlug } from "@/lib/actions/event.actions";
+import { cacheLife } from "next/cache";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 
@@ -39,10 +40,35 @@ const EventTags = ({ tags }: { tags: string[] }) => {
 }
 
 const EventDetailsPages = async ({ params }: { params: Promise<{ slug: string }> }) => {
-
+  
+  'use cache'
+  cacheLife('hours');
+  
   const { slug } = await params;
-  const request = await fetch(`${BASE_URL}/api/events/${slug}`);
-  const { event: { title, image, overview, venue, description, location, date, time, mode, audience, agenda, organizer, tags } } = await request.json();
+
+  let event;
+
+  try {
+    const request = await fetch(`${BASE_URL}/api/events/${slug}`, {
+      next: { revalidate: 60 }
+    });
+    if (!request.ok) {
+      if (request.status === 404) {
+        return notFound();
+      }
+      throw new Error(`Failed to fetch event: ${request.statusText}`);
+    }
+    const response = await request.json();
+    event = response.event;
+    if (!event) {
+      return notFound();
+    }
+  } catch (error) {
+    console.error('Error fetching event:', error);
+    return notFound();
+  }
+
+  const { description, image, overview, date, time, location, mode, agenda, audience, tags, organizer } = event;
 
   if (!description) return notFound();
 
@@ -73,12 +99,12 @@ const EventDetailsPages = async ({ params }: { params: Promise<{ slug: string }>
             </section>
 
             <EventAgenda agendaItem={agenda} />
-            
+
             <section className="flex-col-gap-2">
               <h2>Organizer</h2>
               <p>{organizer}</p>
             </section>
-            
+
             <EventTags tags={tags} />
           </div>
           { /*right side - booking form*/}
@@ -95,16 +121,16 @@ const EventDetailsPages = async ({ params }: { params: Promise<{ slug: string }>
                 </p>
               )}
 
-              <Bookevent/>
+              <Bookevent eventId={event._id} slug={event.slug} />
             </div>
           </aside>
         </div>
       </div>
-      <div className="flex w-full flex-col gap-4"> 
+      <div className="flex w-full flex-col gap-4">
         <h2>Similar Events</h2>
         <div className="events">
           {similarEvents.length > 0 && similarEvents.map((similarEvent: IEvent) => (
-            <EventCard key={similarEvent.title} {...similarEvent}/>
+            <EventCard key={similarEvent.title} {...similarEvent} />
           ))}
         </div>
       </div>
